@@ -17,6 +17,9 @@
 
 #include "reg51.h"
 
+sfr P3M1 = 0xB1;
+sfr P3M0 = 0xB2;
+
 sbit P00 = P0^0;
 sbit P01 = P0^1;
 sbit P02 = P0^2;

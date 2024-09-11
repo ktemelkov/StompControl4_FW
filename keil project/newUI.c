@@ -111,6 +111,8 @@
 #define PIN_RELAY_3 P20
 #define PIN_RELAY_4 P44
 
+#define PIN_RELAY_AMP_CHNL P32
+
 #define PIN_LED_FS_1 P33
 #define PIN_LED_FS_2 P34
 #define PIN_LED_FS_3 P35
@@ -152,6 +154,8 @@
 #define RELAY_INDEX_LOOP_2 2
 #define RELAY_INDEX_LOOP_3 3
 #define RELAY_INDEX_MUTE 4
+
+#define RELAY_INDEX_AMP_CHNL 7
 
 typedef unsigned char UBYTE;
 
@@ -253,7 +257,7 @@ void storePresetsInRAMtoEEPROM(void)
 		{
 			for (preset = 0; preset < PRESETS_PER_BANK; preset++)
 			{
-					IapProgramByte(IAP_ADDRESS + preset + (bank * PRESETS_PER_BANK), ~_bankPresets[bank][preset]);
+                IapProgramByte(IAP_ADDRESS + preset + (bank * PRESETS_PER_BANK), ~_bankPresets[bank][preset]);
 			}
 		}
 }
@@ -280,7 +284,7 @@ void restoreLastUsedBankAndPresetFromEEPROM(void)
 		// the eeprom every single time ... ? is there a brown-out detection?
     _currentPresetIndex = 0;
     _currentBankIndex = 0;
-		_previousPresetIndex = 0;
+	_previousPresetIndex = 0;
 }
 
 void storeLastUsedBankAndPresetToEEPROM(void)
@@ -313,11 +317,15 @@ void setRelay(UBYTE relayIndex, UBYTE relayState)
     {
         PIN_RELAY_4 = relayState;
     }
+    else if (relayIndex == RELAY_INDEX_AMP_CHNL)
+    {
+        PIN_RELAY_AMP_CHNL = relayState;
+    }
 }
 
 void setFS_LED(UBYTE LEDIndex, UBYTE LEDstate)
 {
-    if (LEDstate < 0 || LEDstate >= PRESETS_PER_BANK)
+    if (LEDIndex < 0 || LEDIndex >= PRESETS_PER_BANK)
     {
         return;
     }
@@ -325,6 +333,7 @@ void setFS_LED(UBYTE LEDIndex, UBYTE LEDstate)
     if (LEDIndex == 0)
     {
         PIN_LED_FS_1 = LEDstate;
+
     }
     else if (LEDIndex == 1)
     {
@@ -363,6 +372,10 @@ void recallPreset(UBYTE presetIndex)
     {
         setRelay(RELAY_INDEX_LOOP_0 + i, (_bankPresets[_currentBankIndex][presetIndex] & (1 << i)) >> i);
     }
+
+    i = RELAY_INDEX_AMP_CHNL;
+
+    setRelay(i, (_bankPresets[_currentBankIndex][presetIndex] & (1 << i)) >> i);
 }
 
 void setMuteRelay(UBYTE state)
@@ -388,14 +401,15 @@ UBYTE waitForEvent(void)
 {
     UBYTE event = EVENT_INVALID;
 
-   while(1)
-   {
-     event = areAnyButtonsPushed();
-     if (event != -1)
-     {
-          return event;
-     }
-   }
+    while(1)
+    {
+        event = areAnyButtonsPushed();
+
+        if (event != -1)
+        {
+            return event;
+        }
+    }
 }
 
 void waitForAllButtonsRelease(void)
@@ -465,6 +479,11 @@ void mainLoop(void)
                 // Recall the current preset from EEPROM, so "discard changes"
                 restorePresetsFromEEPROMtoRAM();
             }
+            else if (event == EVENT_TUNER)
+            {
+                _bankPresets[_currentBankIndex][_currentPresetIndex] ^= 1UL << (RELAY_INDEX_AMP_CHNL);
+                recallPreset(_currentPresetIndex);
+            }
             else if (event >= EVENT_FS_0 && event <= EVENT_FS_4)
             {
                 // Edit this preset with the corresponding "loop relay" change
@@ -484,7 +503,7 @@ void mainLoop(void)
 
 #ifdef TURN_OFF_LOOPS_DURING_TUNING
                // Turn off all loops for quieter output during mute state
-               for(i = 0; i < LOOP_RELAYS_COUNT; i++)
+               for (i = 0; i < LOOP_RELAYS_COUNT; i++)
                {
                     setRelay(i, 0);
                }
@@ -496,18 +515,21 @@ void mainLoop(void)
             {
                if (_currentPresetIndex == event)
                {
-                    // It's the same preset, nothing else to do
+                    // It's the same preset, so go back to previous preset
+
+                    // Go to the previous preset
+                    recallPreset(_previousPresetIndex);
+                    storeLastUsedBankAndPresetToEEPROM();
                }
                else
                {
                     // Keep a copy of the preset we're about to leave, in case we need to return to it
                     _previousPresetIndex = _currentPresetIndex;
-                    _currentPresetIndex = event;
 
                     // Go to the new preset
-                    recallPreset(_currentPresetIndex);
+                    recallPreset(event);
                     storeLastUsedBankAndPresetToEEPROM();
-
+/*
                     // Is the FS being held down?
                     for(i = 0; i < 10; i++)
                     {
@@ -529,22 +551,23 @@ void mainLoop(void)
                          storeLastUsedBankAndPresetToEEPROM();
                          _shouldBlinkSegmentDisplay = 0;
                     }
+*/
                }
             }
             else if (event == EVENT_EDIT)
             {
                 _currentState = STATE_EDIT;
             }
-						else if (event == EVENT_STORE)
-						{
-							_currentBankIndex++;
-							if (_currentBankIndex >= BANKS_COUNT)
-							{
-								_currentBankIndex = 0;
-							}
-							setBank(_currentBankIndex);
-							recallPreset(_currentPresetIndex);
-						}
+            else if (event == EVENT_STORE)
+            {
+                _currentBankIndex++;
+                if (_currentBankIndex >= BANKS_COUNT)
+                {
+                    _currentBankIndex = 0;
+                }
+                setBank(_currentBankIndex);
+                recallPreset(_currentPresetIndex);
+            }
         }
     }
 }
@@ -578,9 +601,10 @@ void enterSimpleMode(void)
     {
         loops[i] = 0;
         setRelay(i, 0);
-				setFS_LED(i, 0);
+        setFS_LED(i, 0);
     }
-		setFS_LED(i, 0);
+	
+    setFS_LED(i, 0);
 
     // Simple mode
     while(1)
@@ -595,11 +619,11 @@ void enterSimpleMode(void)
         case EVENT_FS_3:
             loops[event] = !loops[event];
             setRelay(event, loops[event]);
-						setFS_LED(event, loops[event]);
+			setFS_LED(event, loops[event]);
             break;
 
         case EVENT_TUNER:
-						tunerStatus = tunerStatus == 0 ? 1 : 0;
+			tunerStatus = tunerStatus == 0 ? 1 : 0;
             setMuteRelay(tunerStatus);
             break;
 
@@ -659,7 +683,11 @@ void startup(void)
 #ifdef TURN_OFF_LOOPS_DURING_TUNING
      UBYTE i;
 #endif
-     
+
+    // Set AMP Channel relay pin to push-pull mode
+    P3M0 = 0x04;
+    P3M1 = 0x00; 
+
      setMuteRelay(1);
      displayVersion();
      if (checkSimpleMode())

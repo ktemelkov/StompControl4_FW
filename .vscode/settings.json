@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "eeprom.h": "c"
+        "eeprom.h": "c",
+        "INTRINS.H": "cpp",
+        "REG51.H": "cpp"
     }
 }

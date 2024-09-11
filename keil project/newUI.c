@@ -635,6 +635,7 @@ void enterSimpleMode(void)
 }
 
 volatile unsigned int _timerCounter = 0;
+
 void tm0_isr() interrupt 1
 {
      UBYTE i;
@@ -683,10 +684,6 @@ void startup(void)
 #ifdef TURN_OFF_LOOPS_DURING_TUNING
      UBYTE i;
 #endif
-
-    // Set AMP Channel relay pin to push-pull mode
-    P3M0 = 0x04;
-    P3M1 = 0x00; 
 
      setMuteRelay(1);
      displayVersion();
